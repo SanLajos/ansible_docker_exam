@@ -61,7 +61,7 @@
     changed_when: False
 
   - name: Add repository for nodejs
-    shell: curl -sL https://rpm.nodesource.com/setup_10.x | sudo -E bash -
+    shell: curl -sL https://rpm.nodesource.com/setup_10.x | sudo -E bash
     when: node_command_result.rc > 0
   
   - name: Install required packages
@@ -78,6 +78,14 @@
     git:
       repo: https://github.com/ch-e-mistry/DevOps_Training.git
       dest: /nodejs/
+
+  - name: Copy custom index file
+    copy:
+      src: /ansible/files/index.js
+      dest: /nodejs/index.js
+      owner: root
+      group: root
+      mode: '0644'
 
   - name: Copy prepared unit file
     copy:
@@ -99,6 +107,8 @@
     systemd:
       state: started
       name: nodejsapp
+      enabled: yes
+      masked: no
 
   handlers:
   - name: restart firewalld
