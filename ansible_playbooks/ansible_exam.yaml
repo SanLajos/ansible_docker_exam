@@ -1,0 +1,191 @@
+---
+- name: Install apache web server
+  hosts: web
+  become: true
+  vars:
+    packages_web: [httpd,libselinux-python,libsemanage-python]
+  tags:
+    - web
+
+  tasks:
+    - name: PACKAGE MANAGER - Install apache and required packages
+      yum:
+        name: '{{packages_web}}'
+        state: latest
+
+    - name: FIREWALL - Adjust firewall
+      firewalld:
+        port: 80/tcp
+        permanent: yes
+        state: enabled
+      notify: restart firewalld
+
+    - name: SELINUX - httpd_can_network_connect flag. Required for proxy
+      seboolean:
+        name: httpd_can_network_connect
+        state: yes
+        persistent: yes
+    
+    - name: Implement proxy settings (jinja2) for node application
+      template:
+        src: /ansible/templates/template_node.j2
+        dest: /etc/httpd/conf.d/nodejs.conf
+      notify: restart apache
+
+  handlers:
+  - name: restart firewalld
+    service:
+      name: firewalld
+      state: restarted
+      enabled: yes
+
+  - name: restart apache
+    service:
+      name: httpd
+      state: restarted
+      enabled: yes
+
+- name: Implement nodeJS code with dependecies
+  hosts: nodejs
+  become: true
+  vars:
+    packages_node: [nodejs,gcc-c++,git,make]
+  tags:
+    - nodejs
+    
+  tasks:
+  - name: Check node applications is exist
+    command: /usr/bin/node -v
+    register: node_command_result
+    ignore_errors: yes
+    changed_when: False
+
+  - name: Add repository for nodejs
+    shell: curl -sL https://rpm.nodesource.com/setup_10.x | sudo -E bash -
+    when: node_command_result.rc > 0
+  
+  - name: Install required packages
+    package:
+      name: '{{packages_node}}'
+      state: latest
+
+  - name: Install required npm package(s) 
+    npm:
+      name: supervisor
+      global: yes
+
+  - name: Implement nodejs code from git
+    git:
+      repo: https://github.com/ch-e-mistry/DevOps_Training.git
+      dest: /nodejs/
+
+  - name: Copy prepared unit file
+    copy:
+      src: /ansible/files/nodejsapp.service
+      dest: /usr/lib/systemd/system/nodejsapp.service
+      owner: root
+      group: root
+      mode: '0644'
+    notify: systemd daemon reload
+
+  - name: Adjust firewall
+    firewalld:
+      port: 8080/tcp
+      permanent: yes
+      state: enabled
+    notify: restart firewalld
+
+  - name: Start nodejsapp
+    systemd:
+      state: started
+      name: nodejsapp
+
+  handlers:
+  - name: restart firewalld
+    service:
+      name: firewalld
+      state: restarted
+      enabled: yes
+
+  - name: systemd daemon reload
+    systemd:
+        daemon_reload: yes
+
+- name: Implement docker and create dockerimage
+  hosts: nodejs
+  become: true
+  vars:
+    packages_docker: [yum-utils,device-mapper-persistent-data,lvm2,docker-ce,python-pip]
+    docker_container_name: "exam/nodeapp"
+  tags:
+    - docker
+    
+  tasks:
+  - name: Add Docker repo
+    get_url:
+      url: https://download.docker.com/linux/centos/docker-ce.repo
+      dest: /etc/yum.repos.d/docker-ce.repo
+
+  - name: Install epel-release packages
+    package:
+      name: epel-release
+      state: latest
+
+  - name: Install required os packages
+    package:
+      name: '{{packages_docker}}'
+      state: latest
+
+  - name: Install required pip packages
+    pip:
+      name: docker-py
+
+  - name: Add user exam to docker group
+    user:
+      name: exam
+      groups: docker
+      append: yes
+    become: yes
+
+  - name: Start docker service
+    systemd:
+      state: started
+      name: docker
+
+  - name: Copy folder contains Dockerfile
+    copy:
+      src: ./docker_node
+      dest: /
+      owner: exam
+      group: exam
+      mode: '0644'
+
+  - name: Build an image from Dockerfile
+    docker_image:
+      name: '{{docker_container_name}}'
+      path: /docker_node/
+      tag: latest
+      source: build
+      state: present
+      timeout: 300
+
+  - name: Start a container
+    docker_container:
+      name: exam_container
+      image: '{{docker_container_name}}'
+      published_ports: 8070:8070
+      state: started
+ 
+  - name: Adjust firewall
+    firewalld:
+      port: 8070/tcp
+      permanent: yes
+      state: enabled
+    notify: restart firewalld
+
+  handlers:
+  - name: restart firewalld
+    service:
+      name: firewalld
+      state: restarted
+      enabled: yes

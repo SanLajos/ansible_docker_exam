@@ -1,0 +1,34 @@
+---
+- name: Implement exam user
+  hosts: all
+
+  tasks:
+  - name: Add a new user exam
+    user:
+      name: exam
+      shell: /bin/bash
+      group: wheel
+      append: yes
+
+  - name: Create a 2048-bit SSH key for user exam
+    user:
+      name: exam
+      generate_ssh_key: yes
+      ssh_key_bits: 2048
+      ssh_key_file: .ssh/id_rsa
+
+  - name: Add user "exam" to sudo
+    lineinfile:
+      path: /etc/sudoers.d/exam
+      line: 'exam ALL=(ALL) NOPASSWD: ALL'
+      state: present
+      mode: 0440
+      create: yes
+      validate: 'visudo -cf %s'
+
+  - name: Set includedir in sudoers
+    lineinfile:
+      dest: /etc/sudoers
+      line: "#includedir /etc/sudoers.d"
+      state: present
+      validate: "/usr/sbin/visudo -cf %s"

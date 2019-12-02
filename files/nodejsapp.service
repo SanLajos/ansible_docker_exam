@@ -1,0 +1,13 @@
+[Unit]
+Description=Prepared systemd unit file for nodejs app
+Documentation= no any
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/supervisor --watch /nodejs/ /nodejs/index.js
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
